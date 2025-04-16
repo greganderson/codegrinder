@@ -11,10 +11,5 @@ RUN apk add --no-cache \
 
 RUN npm install -g typescript ts-node
 
-# Create a package.json with the required dependencies
-COPY files/typescriptunittest/package.json /home/student/
-COPY files/typescriptunittest/tsconfig.json /home/student/
-RUN npm install
-
 # Clean up npm cache to reduce image size
 RUN npm cache clean --force
