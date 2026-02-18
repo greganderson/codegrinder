@@ -243,6 +243,8 @@ class ASTTest(unittest.TestCase):
             self._validate_list_param(hint, expected_type, type_hint_error_message)
         elif isinstance(expected_type, dict):
             self._validate_dict_param(hint, expected_type, type_hint_error_message)
+        elif isinstance(expected_type, tuple):
+            self._validate_tuple_param(hint, expected_type, type_hint_error_message)
         else:
             self.assertTrue(isinstance(hint, ast.Name), type_hint_error_message)
             self.assertTrue(hint.id == type(expected_type).__name__, type_hint_error_message)
@@ -304,6 +306,30 @@ class ASTTest(unittest.TestCase):
             self._validate_dict_param(actual_value, expected_value, type_hint_error_message)
         else:
             self.assertTrue(actual_value.id == type(expected_value).__name__, type_hint_error_message)
+
+    def _validate_tuple_param(self, param: ast.Subscript, expected_tuple: tuple, type_hint_error_message: str) -> None:
+        """
+        A recursive helper function to test tuple type hints
+        """
+
+        # Must be subscripted: tuple[...]
+        self.assertTrue(isinstance(param, ast.Subscript), type_hint_error_message)
+        self.assertTrue(param.value.id == "tuple", type_hint_error_message)
+
+        # The slice must be a tuple of types
+        self.assertTrue(isinstance(param.slice, ast.Tuple), type_hint_error_message)
+
+        actual_elements = param.slice.elts
+        self.assertEqual(len(actual_elements), len(expected_tuple), type_hint_error_message)
+
+        for actual, expected in zip(actual_elements, expected_tuple):
+            if isinstance(expected, list):
+                self._validate_list_param(actual, expected, type_hint_error_message)
+            elif isinstance(expected, dict):
+                self._validate_dict_param(actual, expected, type_hint_error_message)
+            else:
+                self.assertTrue(isinstance(actual, ast.Name), type_hint_error_message)
+                self.assertTrue(actual.id == type(expected).__name__, type_hint_error_message)
 
 def generate_default_value(type_hint: any) -> any:
     """
