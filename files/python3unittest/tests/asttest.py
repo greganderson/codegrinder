@@ -3,6 +3,7 @@ import os
 import sys
 import trace
 import unittest
+from typing import get_origin, get_args
 
 class ASTTest(unittest.TestCase):
 
