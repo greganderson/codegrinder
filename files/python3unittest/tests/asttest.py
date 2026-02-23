@@ -233,9 +233,14 @@ class ASTTest(unittest.TestCase):
             return_type: return type hint, for example `bool` or `dict[str, int]`
         """
         type_hint_error_message = "Incorrect return type hint"
-        expected_return_type = generate_default_value(return_type)
         self.assertIsNotNone(student_func.returns, f"The {student_func.name} function/method is missing a return type.")
-        self._validate_type_hint(student_func.returns, expected_return_type, type_hint_error_message)
+
+        if return_type is None or return_type is type(None):
+            self.assertIsInstance(student_func.returns, ast.Constant, type_hint_error_message)
+            self.assertEqual(student_func.returns.value, None, type_hint_error_message)
+        else:
+            expected_return_type = generate_default_value(return_type)
+            self._validate_type_hint(student_func.returns, expected_return_type, type_hint_error_message)
 
     def _validate_type_hint(self, hint: any, expected_type: any, type_hint_error_message: str) -> None:
         """ Helper method for checking type hints """
