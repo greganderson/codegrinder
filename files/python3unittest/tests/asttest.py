@@ -1,9 +1,11 @@
 import ast
+import importlib
+import inspect
 import os
 import sys
 import trace
 import unittest
-from typing import get_origin, get_args
+from typing import get_type_hints
 
 class ASTTest(unittest.TestCase):
 
@@ -82,12 +84,18 @@ class ASTTest(unittest.TestCase):
         return calls
 
     def match_signature(self, funcname, argc):
-        """Finds and returns the function definition statement that matches the
-        given function name and argument count. If it can't find a
-        corresponding function definition, it returns None."""
+        """Finds and returns the student function matching the given name and
+        argument count. Returns the callable if found, None otherwise."""
         for func in self.find_all(ast.FunctionDef):
             if func.name == funcname and len(func.args.args) == argc:
-                return func
+                basename = os.path.splitext(self.filename)[0]
+                module = sys.modules.get(basename)
+                if module is None:
+                    try:
+                        module = importlib.import_module(basename)
+                    except ImportError:
+                        return None
+                return getattr(module, funcname, None)
         return None
 
     def assert_prints(self, lines=1, msg="You are not printing anything!"):
@@ -181,208 +189,74 @@ class ASTTest(unittest.TestCase):
                 return True
         return False
 
-    def validate_method_param_type_hints(self, student_method: ast.FunctionDef, type_hints) -> None:
+    def validate_method_param_type_hints(self, student_method, type_hints) -> None:
         """
-        Validates method parameter type hints. Note that `self` should not be included in the list of type hints. It is checked automatically.
+        Validates method parameter type hints. Note that `self` should not be
+        included in the list of type hints. It is checked automatically.
 
         Args:
-            student_method: function to validate type hints against
-            type_hints: list of parameter type hints, for example `[str, int, list[str]]` or `[list[dict[str, dict[str, list[dict[int, list[list[str]]]]]]]]`
+            student_method: method to validate type hints against
+            type_hints: list of parameter type hints, e.g. `[str, int, list[str]]`
         """
         type_hint_error_message = "Incorrect parameter type hints"
+        hints = get_type_hints(student_method)
+        params = list(inspect.signature(student_method).parameters.keys())
+
         self.assertTrue(
-            len(student_method.args.args) == len(type_hints) + 1, # +1 because they aren't supposed to add `self` to the list to check
-            f"The `{student_method.name}` method has the wrong number of parameters"
+            len(params) >= 1 and params[0] == "self",
+            f"The `{student_method.__name__}` method is missing the `self` parameter"
         )
 
-        expected_param_types: list = [generate_default_value(type_hint) for type_hint in type_hints]
-
-        # Check for `self`
-        self.assertTrue(
-            student_method.args.args[0].arg == "self",
-            f"The `{student_method.name}` method is missing the `self` parameter"
+        non_self_params = params[1:]
+        self.assertEqual(
+            len(non_self_params), len(type_hints),
+            f"The `{student_method.__name__}` method has the wrong number of parameters"
         )
 
-        for i in range(1, len(expected_param_types)):
-            param: ast.arg = student_method.args.args[i]
-            self.assertIsNotNone(param.annotation, type_hint_error_message)
-            self._validate_type_hint(param.annotation, expected_param_types[i-1], type_hint_error_message) # -1 because we are skipping self in the actual args
+        for param_name, expected in zip(non_self_params, type_hints):
+            self.assertIn(param_name, hints, type_hint_error_message)
+            self.assertTrue(hints[param_name] == expected, type_hint_error_message)
 
-    def validate_function_param_type_hints(self, student_func: ast.FunctionDef, type_hints: list) -> None:
+    def validate_function_param_type_hints(self, student_func, type_hints: list) -> None:
         """
         Validates function parameter type hints.
 
         Args:
             student_func: function to validate type hints against
-            type_hints: list of parameter type hints, for example `[str, int, list[str]]` or `[list[dict[str, dict[str, list[dict[int, list[list[str]]]]]]]]`
+            type_hints: list of parameter type hints, e.g. `[str, int, list[str]]`
         """
         type_hint_error_message = "Incorrect parameter type hints"
-        expected_param_types: list = [generate_default_value(type_hint) for type_hint in type_hints]
+        hints = get_type_hints(student_func)
+        params = list(inspect.signature(student_func).parameters.keys())
 
-        for i in range(len(expected_param_types)):
-            param: ast.arg = student_func.args.args[i]
-            self.assertIsNotNone(param.annotation, type_hint_error_message)
-            self._validate_type_hint(param.annotation, expected_param_types[i], type_hint_error_message)
+        self.assertEqual(
+            len(params), len(type_hints),
+            f"The `{student_func.__name__}` function has the wrong number of parameters"
+        )
 
-    def validate_return_type_hint(self, student_func: ast.FunctionDef, return_type: any) -> None:
+        for param_name, expected in zip(params, type_hints):
+            self.assertIn(param_name, hints, type_hint_error_message)
+            self.assertTrue(hints[param_name] == expected, type_hint_error_message)
+
+    def validate_return_type_hint(self, student_func, return_type) -> None:
         """
-        Validates return type hint
+        Validates return type hint.
 
         Args:
             student_func: function to validate type hints against
-            return_type: return type hint, for example `bool` or `dict[str, int]`
+            return_type: return type hint, e.g. `bool` or `dict[str, int]`
         """
         type_hint_error_message = "Incorrect return type hint"
-        self.assertIsNotNone(student_func.returns, f"The {student_func.name} function/method is missing a return type.")
+        hints = get_type_hints(student_func)
 
-        if return_type is None or return_type is type(None):
-            self.assertIsInstance(student_func.returns, ast.Constant, type_hint_error_message)
-            self.assertEqual(student_func.returns.value, None, type_hint_error_message)
-        else:
-            expected_return_type = generate_default_value(return_type)
-            self._validate_type_hint(student_func.returns, expected_return_type, type_hint_error_message)
+        self.assertIn(
+            'return', hints,
+            f"The `{student_func.__name__}` function/method is missing a return type."
+        )
 
-    def _validate_type_hint(self, hint: any, expected_type: any, type_hint_error_message: str) -> None:
-        """ Helper method for checking type hints """
-        if isinstance(expected_type, list):
-            self._validate_list_param(hint, expected_type, type_hint_error_message)
-        elif isinstance(expected_type, dict):
-            self._validate_dict_param(hint, expected_type, type_hint_error_message)
-        elif isinstance(expected_type, tuple):
-            self._validate_tuple_param(hint, expected_type, type_hint_error_message)
-        else:
-            self.assertTrue(isinstance(hint, ast.Name), type_hint_error_message)
-            self.assertTrue(hint.id == type(expected_type).__name__, type_hint_error_message)
+        expected = type(None) if return_type is None else return_type
+        self.assertTrue(hints['return'] == expected, type_hint_error_message)
 
-    def _validate_list_param(self, param: ast.Subscript, expected_list: list, type_hint_error_message: str) -> None:
-        """
-        A recursive helper function to test list type hints.
-        """
-        # Check if no type is specified for the list
-        if len(expected_list) == 0:
-            # There isn't a specific param type for the list, so none should be specified
-            self.assertTrue(isinstance(param, ast.Name), type_hint_error_message)
-            self.assertTrue(param.id == "list", type_hint_error_message)
-            return
-
-        # Make sure param is a list
-        self.assertTrue(isinstance(param, ast.Subscript), type_hint_error_message)
-        self.assertTrue(param.value.id == "list", type_hint_error_message)
-
-        expected_list_type = expected_list[0]
-
-        # Validate the list type
-        if isinstance(expected_list_type, list):
-            self._validate_list_param(param.slice, expected_list_type, type_hint_error_message)
-        elif isinstance(expected_list_type, dict):
-            self._validate_dict_param(param.slice, expected_list_type, type_hint_error_message)
-        else:
-            self.assertTrue(param.slice.id == type(expected_list_type).__name__, type_hint_error_message)
-
-    def _validate_dict_param(self, actual_dict: ast.Subscript, expected_dict: dict, type_hint_error_message: str) -> None:
-        """
-        A recursive helper function to test dict type hints.
-        """
-        # Check if dict has specific types
-        if len(expected_dict) == 0:
-            self.assertTrue(isinstance(actual_dict, ast.Name), type_hint_error_message)
-            self.assertTrue(actual_dict.id == "dict", type_hint_error_message)
-            return
-
-        # Make sure param is a dict
-        self.assertTrue(isinstance(actual_dict, ast.Subscript), type_hint_error_message)
-        self.assertTrue(actual_dict.value.id == "dict", type_hint_error_message)
-
-        # Verify the student param is a dict
-        self.assertTrue(isinstance(actual_dict, ast.Subscript), type_hint_error_message)
-        self.assertTrue(isinstance(actual_dict.slice, ast.Tuple), type_hint_error_message)
-
-        # Extract the key/value from both expected and student param
-        expected_key, expected_value = list(expected_dict.items())[0]
-        actual_key, actual_value = actual_dict.slice.dims[0], actual_dict.slice.dims[1]
-
-        # Check the key. Note that since the key has to be hashable, we don't need to do anything complicated.
-        self.assertTrue(actual_key.id == type(expected_key).__name__)
-
-        # Check the value
-        if isinstance(expected_value, list):
-            self._validate_list_param(actual_value, expected_value, type_hint_error_message)
-        elif isinstance(expected_value, dict):
-            self._validate_dict_param(actual_value, expected_value, type_hint_error_message)
-        else:
-            self.assertTrue(actual_value.id == type(expected_value).__name__, type_hint_error_message)
-
-    def _validate_tuple_param(self, param: ast.Subscript, expected_tuple: tuple, type_hint_error_message: str) -> None:
-        """
-        A recursive helper function to test tuple type hints
-        """
-
-        # Must be subscripted: tuple[...]
-        self.assertTrue(isinstance(param, ast.Subscript), type_hint_error_message)
-        self.assertTrue(param.value.id == "tuple", type_hint_error_message)
-
-        # The slice must be a tuple of types
-        self.assertTrue(isinstance(param.slice, ast.Tuple), type_hint_error_message)
-
-        actual_elements = param.slice.elts
-        self.assertEqual(len(actual_elements), len(expected_tuple), type_hint_error_message)
-
-        for actual, expected in zip(actual_elements, expected_tuple):
-            if isinstance(expected, list):
-                self._validate_list_param(actual, expected, type_hint_error_message)
-            elif isinstance(expected, dict):
-                self._validate_dict_param(actual, expected, type_hint_error_message)
-            else:
-                self.assertTrue(isinstance(actual, ast.Name), type_hint_error_message)
-                self.assertTrue(actual.id == type(expected).__name__, type_hint_error_message)
-
-def generate_default_value(type_hint: any) -> any:
-    """
-    Given a type hint, convert it into a default object for use in type hint validation.
-
-    For example:
-    hint = list[dict[str, dict[str, list[dict[int, list[list[str]]]]]]]
-    generate_default_value(hint) -> [[{'': {'': [{0: [['']]}]}}]]
-    """
-    # Handle base types directly
-    if type_hint is str:
-        return ""
-    elif type_hint is int:
-        return 0
-    elif type_hint is float:
-        return 0.0
-    elif type_hint is bool:
-        return False
-    elif type_hint is None or type_hint is type(None):  # Handle NoneType
-        return None
-
-    origin = get_origin(type_hint)  # Get the generic type, e.g., list, dict, etc.
-    args = get_args(type_hint)      # Get the type arguments, e.g., (dict[str, list[int]])
-
-    # Handle generic types
-    if origin is list:
-        # Recursively generate a default value for the list's inner type
-        return [generate_default_value(args[0])] if args else []
-    elif origin is dict:
-        # Generate a default key-value pair using inner types
-        key_default = generate_default_value(args[0]) if args else ""
-        value_default = generate_default_value(args[1]) if len(args) > 1 else None
-        return {key_default: value_default}
-    elif origin is tuple:
-        # Generate a tuple with default values for each argument
-        return tuple(generate_default_value(arg) for arg in args)
-    elif origin is set:
-        # Generate a set with one default value of its inner type
-        return {generate_default_value(args[0])} if args else set()
-    elif type_hint is list:
-        # list is missing specific type
-        return []
-    elif type_hint is dict:
-        # dict is missing specific types
-        return {}
-
-    # Fallback for unsupported or unknown types
-    return None
 
 def get_function_end_lineno(funcdef):
     """Given an ast.FunctionDef node, returns the line number of the last line
