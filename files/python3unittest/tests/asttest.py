@@ -49,6 +49,15 @@ class ASTTest(unittest.TestCase):
         with find_all."""
         return ast.dump(self.tree)
 
+    def get_callable_from_functiondef(self, funcdef: ast.FunctionDef) -> Callable:
+        """Get the real callable from ast.FunctionDef"""
+        basename = os.path.splitext(self.filename)[0]
+        module = sys.modules.get(basename)
+
+        if module is None:
+            module.importlib.import_module(basename)
+        return getattr(module, funcdef.name, None)
+
     def get_function_calls(self, start_node=None):
         """Helper to find all of the function calls in the submission."""
         names = []
@@ -83,19 +92,12 @@ class ASTTest(unittest.TestCase):
                 calls.append(call)
         return calls
 
-    def match_signature(self, funcname, argc):
-        """Finds and returns the student function matching the given name and
-        argument count. Returns the callable if found, None otherwise."""
+    def match_signature(self, funcname: str, argc) -> ast.FunctionDef | None:
+        """Find and return the ast.FunctionDef for the function name.
+        Returns None if none are found."""
         for func in self.find_all(ast.FunctionDef):
             if func.name == funcname and len(func.args.args) == argc:
-                basename = os.path.splitext(self.filename)[0]
-                module = sys.modules.get(basename)
-                if module is None:
-                    try:
-                        module = importlib.import_module(basename)
-                    except ImportError:
-                        return None
-                return getattr(module, funcname, None)
+                return func
         return None
 
     def assert_prints(self, lines=1, msg="You are not printing anything!"):
@@ -189,7 +191,7 @@ class ASTTest(unittest.TestCase):
                 return True
         return False
 
-    def validate_method_param_type_hints(self, student_method, type_hints) -> None:
+    def validate_method_param_type_hints(self, student_method: ast.FunctionDef, type_hints: list) -> None:
         """
         Validates method parameter type hints. Note that `self` should not be
         included in the list of type hints. It is checked automatically.
@@ -217,7 +219,7 @@ class ASTTest(unittest.TestCase):
             self.assertIn(param_name, hints, type_hint_error_message)
             self.assertTrue(hints[param_name] == expected, type_hint_error_message)
 
-    def validate_function_param_type_hints(self, student_func, type_hints: list) -> None:
+    def validate_function_param_type_hints(self, student_funcdef: ast.FunctionDef, type_hints: list) -> None:
         """
         Validates function parameter type hints.
 
@@ -225,6 +227,8 @@ class ASTTest(unittest.TestCase):
             student_func: function to validate type hints against
             type_hints: list of parameter type hints, e.g. `[str, int, list[str]]`
         """
+        student_func = self.get_callable_from_functiondef(student_funcdef)
+
         type_hint_error_message = "Incorrect parameter type hints"
         hints = get_type_hints(student_func)
         params = list(inspect.signature(student_func).parameters.keys())
@@ -238,7 +242,7 @@ class ASTTest(unittest.TestCase):
             self.assertIn(param_name, hints, type_hint_error_message)
             self.assertTrue(hints[param_name] == expected, type_hint_error_message)
 
-    def validate_return_type_hint(self, student_func, return_type) -> None:
+    def validate_return_type_hint(self, student_funcdef: ast.FunctionDef, return_type) -> None:
         """
         Validates return type hint.
 
@@ -246,6 +250,8 @@ class ASTTest(unittest.TestCase):
             student_func: function to validate type hints against
             return_type: return type hint, e.g. `bool` or `dict[str, int]`
         """
+        student_func = self.get_callable_from_functiondef(student_funcdef)
+
         type_hint_error_message = "Incorrect return type hint"
         hints = get_type_hints(student_func)
 
