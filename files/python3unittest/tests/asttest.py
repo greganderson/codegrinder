@@ -49,7 +49,7 @@ class ASTTest(unittest.TestCase):
         with find_all."""
         return ast.dump(self.tree)
 
-    def get_callable_from_functiondef(self, funcdef: ast.FunctionDef) -> Callable:
+    def get_callable_from_functiondef(self, funcdef: ast.FunctionDef) -> callable:
         """Get the real callable from ast.FunctionDef"""
         basename = os.path.splitext(self.filename)[0]
         module = sys.modules.get(basename)
@@ -57,6 +57,23 @@ class ASTTest(unittest.TestCase):
         if module is None:
             module.importlib.import_module(basename)
         return getattr(module, funcdef.name, None)
+
+    def get_callable_from_methoddef(self, methoddef: ast.FunctionDef) -> Callable:
+        """Given an ast.FunctionDef representing a method, return the actual callable."""
+
+        basename = os.path.splitext(self.filename)[0]
+
+        module = sys.modules.get(basename)
+        if module is None:
+            module = importlib.import_module(basename)
+
+        for class_node in self.find_all(ast.ClassDef):
+            for node in class_node.body:
+                if node is methoddef:
+                    cls = getattr(module, class_node.name)
+                    return getattr(cls, methoddef.name)
+
+        raise ValueError(f"{methoddef.name} is not defined inside a class")
 
     def get_function_calls(self, start_node=None):
         """Helper to find all of the function calls in the submission."""
@@ -191,7 +208,7 @@ class ASTTest(unittest.TestCase):
                 return True
         return False
 
-    def validate_method_param_type_hints(self, student_method: ast.FunctionDef, type_hints: list) -> None:
+    def validate_method_param_type_hints(self, student_method_def: ast.FunctionDef, type_hints: list[any]) -> None:
         """
         Validates method parameter type hints. Note that `self` should not be
         included in the list of type hints. It is checked automatically.
@@ -200,6 +217,8 @@ class ASTTest(unittest.TestCase):
             student_method: method to validate type hints against
             type_hints: list of parameter type hints, e.g. `[str, int, list[str]]`
         """
+        student_method = self.get_callable_from_methoddef(student_method_def)
+
         type_hint_error_message = "Incorrect parameter type hints"
         hints = get_type_hints(student_method)
         params = list(inspect.signature(student_method).parameters.keys())
@@ -219,7 +238,7 @@ class ASTTest(unittest.TestCase):
             self.assertIn(param_name, hints, type_hint_error_message)
             self.assertTrue(hints[param_name] == expected, type_hint_error_message)
 
-    def validate_function_param_type_hints(self, student_funcdef: ast.FunctionDef, type_hints: list) -> None:
+    def validate_function_param_type_hints(self, student_funcdef: ast.FunctionDef, type_hints: list[any]) -> None:
         """
         Validates function parameter type hints.
 
@@ -242,7 +261,7 @@ class ASTTest(unittest.TestCase):
             self.assertIn(param_name, hints, type_hint_error_message)
             self.assertTrue(hints[param_name] == expected, type_hint_error_message)
 
-    def validate_return_type_hint(self, student_funcdef: ast.FunctionDef, return_type) -> None:
+    def validate_return_type_hint(self, student_funcdef: ast.FunctionDef, return_type: any) -> None:
         """
         Validates return type hint.
 
