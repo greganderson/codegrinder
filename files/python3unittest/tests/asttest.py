@@ -58,7 +58,7 @@ class ASTTest(unittest.TestCase):
             module.importlib.import_module(basename)
         return getattr(module, funcdef.name, None)
 
-    def get_callable_from_methoddef(self, methoddef: ast.FunctionDef) -> Callable:
+    def get_callable_from_methoddef(self, methoddef: ast.FunctionDef) -> callable:
         """Given an ast.FunctionDef representing a method, return the actual callable."""
 
         basename = os.path.splitext(self.filename)[0]
