@@ -269,7 +269,14 @@ class ASTTest(unittest.TestCase):
             student_func: function to validate type hints against
             return_type: return type hint, e.g. `bool` or `dict[str, int]`
         """
-        student_func = self.get_callable_from_functiondef(student_funcdef)
+        is_method = any(
+            student_funcdef in ast.walk(class_node)
+            for class_node in self.find_all(ast.ClassDef)
+        )
+        if is_method:
+            student_func = self.get_callable_from_methoddef(student_funcdef)
+        else:
+            student_func = self.get_callable_from_functiondef(student_funcdef)
 
         type_hint_error_message = "Incorrect return type hint"
         hints = get_type_hints(student_func)
