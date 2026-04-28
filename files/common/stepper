@@ -157,6 +157,7 @@ def main() -> None:
         sys.exit(0)
 
     failed_tests = 0
+    tests_ran = 0
     test_results: List[Dict[str, Any]] = []
     total_start_time = time.monotonic()
 
@@ -170,6 +171,7 @@ def main() -> None:
         test_start_time = time.monotonic()
         success, error_log = run_test_case(cmd, transcript_path, timeout, post_error_lines)
         duration = time.monotonic() - test_start_time
+        tests_ran += 1
 
         if grade_mode:
             # In grade mode, always collect results for the XML report.
@@ -192,10 +194,14 @@ def main() -> None:
     
     print("-" * 80)
     total_tests = len(transcript_files)
-    passed_tests = total_tests - failed_tests
+    passed_tests = tests_ran - failed_tests
+    tests_not_run = total_tests - tests_ran
     total_duration = time.monotonic() - total_start_time
-    summary_text = f"Passed {passed_tests}/{total_tests} tests in {total_duration:.2f} seconds"
+    summary_text = f"Passed {passed_tests}/{total_tests} tests in {total_duration:.2f} seconds."
     print_summary(summary_text, success=(failed_tests == 0))
+    if failed_tests > 0 or tests_not_run > 0:
+        extra_summary = f"{failed_tests} tests failed. {tests_not_run} tests not run."
+        print_summary(extra_summary, success=False)
     
     if grade_mode:
         # In grade mode, generate the XML report
